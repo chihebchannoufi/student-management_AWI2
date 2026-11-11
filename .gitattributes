@@ -1,2 +1,20 @@
-/mvnw text eol=lf
+# Détection automatique du texte, normalisation en LF dans le dépôt
+* text=auto
+
+# Scripts exécutés sous Linux (Docker) : toujours en LF
+mvnw text eol=lf
+Jenkinsfile text eol=lf
+Dockerfile text eol=lf
+*.sh text eol=lf
+
+# Script Windows : en CRLF
 *.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Fichiers binaires : ne pas toucher
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary

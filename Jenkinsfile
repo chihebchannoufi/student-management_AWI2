@@ -5,6 +5,7 @@ pipeline {
         disableConcurrentBuilds()
         timestamps()
         skipDefaultCheckout(true)
+        timeout(time: 30, unit: 'MINUTES')
     }
 
     parameters {
@@ -38,6 +39,17 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+
+        stage('Check tools') {
+            steps {
+                bat '''
+                    echo JAVA_HOME=%JAVA_HOME%
+                    java -version
+                    git --version
+                    docker version --format "Docker serveur : {{.Server.Version}}"
+                '''
             }
         }
 
