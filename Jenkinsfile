@@ -38,7 +38,7 @@ pipeline {
                         ./mvnw jacoco:report sonar:sonar \
                         -Dsonar.projectKey=student-management \
                         -Dsonar.host.url=${SONAR_URL} \
-                        -Dsonar.token=${SONAR_TOKEN}
+                        -Dsonar.login=${SONAR_TOKEN}
                     '''
                 }
             }
