@@ -21,6 +21,7 @@
     <name>student-management</name>
     <description>Student Management Project</description>
 
+    <!-- Properties -->
     <properties>
         <java.version>21</java.version>
         <maven.compiler.source>21</maven.compiler.source>
@@ -28,6 +29,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jacoco.version>0.8.12</jacoco.version>
         <sonar.maven.version>3.11.0.3922</sonar.maven.version>
+
+        <!-- Nexus URL: localhost on Windows, overridden in Jenkins -->
+        <nexus.url>http://localhost:8081</nexus.url>
     </properties>
 
     <!-- Dependencies -->
@@ -78,13 +82,10 @@
 
     <!-- Nexus configuration -->
     <distributionManagement>
-
         <snapshotRepository>
             <id>nexus-snapshots</id>
-            <name>Student Snapshot Repository</name>
-            <url>http://localhost:8081/repository/student-snapshot/</url>
+            <url>${nexus.url}/repository/student-snapshots/</url>
         </snapshotRepository>
-
     </distributionManagement>
 
     <!-- Build configuration -->
