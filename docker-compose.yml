@@ -1,4 +1,5 @@
 version: '3.8'
+
 services:
   sonarqube:
     image: sonarqube:lts-community
@@ -11,8 +12,30 @@ services:
       - sonarqube_data:/opt/sonarqube/data
       - sonarqube_extensions:/opt/sonarqube/extensions
       - sonarqube_logs:/opt/sonarqube/logs
+    restart: unless-stopped
+
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins-student
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+    restart: unless-stopped
+
+  nexus:
+    image: sonatype/nexus3
+    container_name: nexus-student
+    ports:
+      - "8081:8081"
+    volumes:
+      - nexus_data:/nexus-data
+    restart: unless-stopped
 
 volumes:
   sonarqube_data:
   sonarqube_extensions:
   sonarqube_logs:
+  jenkins_home:
+  nexus_data:
