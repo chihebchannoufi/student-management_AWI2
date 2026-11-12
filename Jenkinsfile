@@ -106,7 +106,7 @@ pipeline {
             steps {
                 bat '''
                     docker rm -f %DEPLOY_CONTAINER% >nul 2>&1 || echo Aucun ancien conteneur
-                    docker run --detach --name %DEPLOY_CONTAINER% --restart unless-stopped --publish %DEPLOY_PORT%:8089 --add-host host.docker.internal:host-gateway --env SERVER_PORT=8089 --env "SPRING_DATASOURCE_URL=%DATABASE_URL%" --env "SPRING_DATASOURCE_USERNAME=%DATABASE_USERNAME%" --env "SPRING_DATASOURCE_PASSWORD=%DATABASE_PASSWORD%" %LOCAL_IMAGE%
+                    docker run --detach --name %DEPLOY_CONTAINER% --restart unless-stopped --publish %DEPLOY_PORT%:8089 --env SERVER_PORT=8089 --env JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true --env SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.MariaDBDialect --env "SPRING_DATASOURCE_URL=%DATABASE_URL%" --env "SPRING_DATASOURCE_USERNAME=%DATABASE_USERNAME%" --env "SPRING_DATASOURCE_PASSWORD=%DATABASE_PASSWORD%" %LOCAL_IMAGE%
                 '''
             }
         }
