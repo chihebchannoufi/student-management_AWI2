@@ -7,30 +7,36 @@ pipeline {
     }
 
     stages {
-        stage('1 - Checkout') {
+        stage('CHECKOUT GIT') {
             steps {
                 echo 'Recuperation du projet depuis GitHub'
                 checkout scm
             }
         }
 
-        stage('2 - Build') {
+        stage('MVN CLEAN') {
             steps {
-                echo 'Compilation du projet'
+                echo 'Nettoyage du projet'
                 sh 'chmod +x mvnw'
-                sh './mvnw clean compile'
+                sh './mvnw clean'
             }
         }
 
-        stage('3 - Unit Tests') {
+        stage('ARTIFACT CONSTRUCTION') {
+            steps {
+                echo 'Compilation du projet'
+                sh './mvnw compile'
+            }
+        }
+
+        stage('UNIT TESTS') {
             steps {
                 echo 'Execution des tests unitaires (Mock)'
-                // On execute uniquement le test Mock pour ne pas bloquer sur MySQL/WampServer dans Docker
                 sh './mvnw test -Dtest=DepartmentServiceMockTest'
             }
         }
 
-        stage('4 - SonarQube Analysis') {
+        stage('MVN SONARQUBE') {
             steps {
                 echo 'Analyse de la qualite du code avec SonarQube'
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
@@ -44,7 +50,7 @@ pipeline {
             }
         }
 
-        stage('5 - Deploy to Nexus') {
+        stage('PUBLISH TO NEXUS') {
             steps {
                 echo 'Deploiement du .jar dans Nexus'
                 withCredentials([usernamePassword(
@@ -59,6 +65,44 @@ pipeline {
                         rm -f nexus-settings.xml
                     '''
                 }
+            }
+        }
+
+        // --- Nouvelles étapes ajoutées en mode "Placeholder" (bouchon) pour l'affichage UI ---
+        
+        stage('BUILDING OUR IMAGE') {
+            steps {
+                echo 'Étape à implémenter : Construction de l image Docker'
+            }
+        }
+
+        stage('DEPLOY OUR IMAGE') {
+            steps {
+                echo 'Étape à implémenter : Déploiement de l image'
+            }
+        }
+
+        stage('Test AWS Credentials') {
+            steps {
+                echo 'Étape à implémenter : Test des accès AWS'
+            }
+        }
+
+        stage('SETUP TERRAFORM') {
+            steps {
+                echo 'Étape à implémenter : Initialisation Terraform'
+            }
+        }
+
+        stage('UPDATE KUBECONFIG') {
+            steps {
+                echo 'Étape à implémenter : Mise à jour de Kubernetes'
+            }
+        }
+
+        stage('DEPLOY TO AWS KUBERNETES') {
+            steps {
+                echo 'Étape à implémenter : Déploiement final'
             }
         }
     }
