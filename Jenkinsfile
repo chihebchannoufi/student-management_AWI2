@@ -19,15 +19,15 @@ pipeline {
         stage('2 - BUILD') {
             steps {
                 echo 'Nettoyage et compilation du projet'
-                sh 'chmod +x mvnw'
-                sh './mvnw clean compile'
+                 'chmod +x mvnw'
+                 './mvnw clean compile'
             }
         }
 
         stage('3 - UNIT TESTS') {
             steps {
                 echo 'Execution de tous les tests unitaires'
-                sh './mvnw verify'
+                 './mvnw verify'
             }
             post {
                 always {
@@ -46,7 +46,7 @@ pipeline {
                         variable: 'SONAR_TOKEN'
                     )
                 ]) {
-                    sh '''
+                     '''
                         ./mvnw sonar:sonar \
                         -Dsonar.projectKey=student-management \
                         -Dsonar.host.url=$SONAR_URL \
@@ -69,7 +69,7 @@ pipeline {
                         passwordVariable: 'NEXUS_PASS'
                     )
                 ]) {
-                    sh '''
+                     '''
                         mkdir -p "$HOME/.m2"
 
                         cat > "$HOME/.m2/settings.xml" <<EOF
