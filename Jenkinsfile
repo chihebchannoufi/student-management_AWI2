@@ -1,109 +1,111 @@
+
 pipeline {
     agent any
 
     environment {
         SONAR_URL = 'http://sonarqube:9000'
-        NEXUS_URL = 'http://nexus:8081/repository/maven-snapshots/'
+        NEXUS_URL = 'http://nexus:8081'
     }
 
     stages {
-        stage('CHECKOUT GIT') {
+
+        stage('1 - CHECKOUT GIT') {
             steps {
                 echo 'Recuperation du projet depuis GitHub'
                 checkout scm
             }
         }
 
-        stage('MVN CLEAN') {
+        stage('2 - BUILD') {
             steps {
-                echo 'Nettoyage du projet'
+                echo 'Nettoyage et compilation du projet'
                 sh 'chmod +x mvnw'
-                sh './mvnw clean'
+                sh './mvnw clean compile'
             }
         }
 
-        stage('ARTIFACT CONSTRUCTION') {
+        stage('3 - UNIT TESTS') {
             steps {
-                echo 'Compilation du projet'
-                sh './mvnw compile'
+                echo 'Execution de tous les tests unitaires'
+                sh './mvnw verify'
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true,
+                          testResults: 'target/surefire-reports/*.xml'
+                }
             }
         }
 
-        stage('UNIT TESTS') {
+        stage('4 - SONARQUBE ANALYSIS') {
             steps {
-                echo 'Execution des tests unitaires (Mock)'
-                sh './mvnw test -Dtest=DepartmentServiceMockTest'
-            }
-        }
-
-        stage('MVN SONARQUBE') {
-            steps {
-                echo 'Analyse de la qualite du code avec SonarQube'
-                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                echo 'Analyse de la qualite du code'
+                withCredentials([
+                    string(
+                        credentialsId: 'sonar-token',
+                        variable: 'SONAR_TOKEN'
+                    )
+                ]) {
                     sh '''
-                        ./mvnw jacoco:report sonar:sonar \
+                        ./mvnw sonar:sonar \
                         -Dsonar.projectKey=student-management \
-                        -Dsonar.host.url=${SONAR_URL} \
-                        -Dsonar.login=${SONAR_TOKEN}
+                        -Dsonar.host.url=$SONAR_URL \
+                        -Dsonar.token=$SONAR_TOKEN \
+                        -Dsonar.java.binaries=target/classes \
+                        -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
                     '''
                 }
             }
         }
 
-        stage('PUBLISH TO NEXUS') {
+        stage('5 - PUBLISH TO NEXUS') {
             steps {
-                echo 'Deploiement du .jar dans Nexus'
-                withCredentials([usernamePassword(
-                    credentialsId: 'nexus-credentials',
-                    usernameVariable: 'NEXUS_USER',
-                    passwordVariable: 'NEXUS_PASS'
-                )]) {
+                echo 'Publication de l artefact Maven dans Nexus'
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'nexus-credentials',
+                        usernameVariable: 'NEXUS_USER',
+                        passwordVariable: 'NEXUS_PASS'
+                    )
+                ]) {
                     sh '''
-                        printf "<settings><servers><server><id>nexus-snapshots</id><username>%s</username><password>%s</password></server></servers></settings>" "${NEXUS_USER}" "${NEXUS_PASS}" > nexus-settings.xml
-                        ./mvnw deploy -s nexus-settings.xml -DskipTests \
-                        -DaltDeploymentRepository=nexus-snapshots::default::${NEXUS_URL}
-                        rm -f nexus-settings.xml
+                        mkdir -p "$HOME/.m2"
+
+                        cat > "$HOME/.m2/settings.xml" <<EOF
+<settings>
+    <servers>
+        <server>
+            <id>nexus-snapshots</id>
+            <username>${NEXUS_USER}</username>
+            <password>${NEXUS_PASS}</password>
+        </server>
+    </servers>
+</settings>
+EOF
+
+                        ./mvnw deploy \
+                        -DskipTests \
+                        -Dnexus.url=$NEXUS_URL
+
+                        rm -f "$HOME/.m2/settings.xml"
                     '''
                 }
             }
         }
+    }
 
-        // --- Nouvelles étapes ajoutées en mode "Placeholder" (bouchon) pour l'affichage UI ---
-        
-        stage('BUILDING OUR IMAGE') {
-            steps {
-                echo 'Étape à implémenter : Construction de l image Docker'
-            }
+    post {
+        success {
+            echo 'SUCCESS : Build, tests, SonarQube et Nexus termines !'
         }
 
-        stage('DEPLOY OUR IMAGE') {
-            steps {
-                echo 'Étape à implémenter : Déploiement de l image'
-            }
+        failure {
+            echo 'FAILURE : Consultez Console Output pour identifier l erreur.'
         }
 
-        stage('Test AWS Credentials') {
-            steps {
-                echo 'Étape à implémenter : Test des accès AWS'
-            }
-        }
-
-        stage('SETUP TERRAFORM') {
-            steps {
-                echo 'Étape à implémenter : Initialisation Terraform'
-            }
-        }
-
-        stage('UPDATE KUBECONFIG') {
-            steps {
-                echo 'Étape à implémenter : Mise à jour de Kubernetes'
-            }
-        }
-
-        stage('DEPLOY TO AWS KUBERNETES') {
-            steps {
-                echo 'Étape à implémenter : Déploiement final'
-            }
+        always {
+            echo 'Pipeline termine.'
         }
     }
 }
