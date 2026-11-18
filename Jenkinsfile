@@ -66,11 +66,11 @@ pipeline {
             }
         }
 
-        // ARRETE l'ancien conteneur, demarre la nouvelle image avec MySQL (root sans mot de passe), puis verifie qu'elle tourne
+        // SUPPRIME l'ancien conteneur (sans echouer s'il n'existe pas), demarre la nouvelle image avec MySQL, puis verifie qu'elle tourne
         stage('DEPLOY OUR IMAGE') {
             steps {
-                bat 'docker stop student-management >nul 2>&1 || echo Aucun conteneur student-management actif'
-                bat 'docker rm student-management >nul 2>&1 || echo Aucun ancien conteneur student-management'
+                // returnStatus: true ignore le code de retour si aucun conteneur n'existe
+                bat(returnStatus: true, script: 'docker rm -f student-management')
 
                 bat '''
                 docker run -d --name student-management -p 8089:8080 ^
