@@ -199,17 +199,27 @@ EOF
         // 9. Test AWS Credentials
         // =====================================
         stage('Test AWS Credentials') {
-            steps {
-                sh '''
-                    set -e
+    steps {
+        withCredentials([[
+            $class: 'AmazonWebServicesCredentialsBinding',
+            credentialsId: 'aws-credentials',
+            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+        ]]) {
+            sh '''
+                set -e
 
-                    echo "===== REMOVE OLD CONTAINER ====="
+                echo "===== CHECK AWS CLI ====="
+                aws --version
 
-                    docker rm -f ${CONTAINER_NAME} || true
-                '''
-            }
+                echo "===== VERIFY AWS CREDENTIALS ====="
+                aws sts get-caller-identity --output json
+
+                echo "SUCCESS: Jenkins connected to AWS."
+            '''
         }
-
+    }
+}
         // =====================================
         // 10. SETUP TERRAFORM
         // =====================================
