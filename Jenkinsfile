@@ -66,21 +66,19 @@ pipeline {
             }
         }
 
-        // ARRETE l'ancien conteneur, demarre la nouvelle image avec MySQL, puis verifie qu'elle tourne
+        // ARRETE l'ancien conteneur, demarre la nouvelle image avec MySQL (root sans mot de passe), puis verifie qu'elle tourne
         stage('DEPLOY OUR IMAGE') {
             steps {
                 bat 'docker stop student-management >nul 2>&1 || echo Aucun conteneur student-management actif'
                 bat 'docker rm student-management >nul 2>&1 || echo Aucun ancien conteneur student-management'
 
-                withCredentials([string(credentialsId: 'db-password', variable: 'DB_PASSWORD')]) {
-                    bat '''
-                    docker run -d --name student-management -p 8089:8080 ^
-                      -e "SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/studentdb?useSSL=false&allowPublicKeyRetrieval=true" ^
-                      -e "SPRING_DATASOURCE_USERNAME=appuser" ^
-                      -e "SPRING_DATASOURCE_PASSWORD=%DB_PASSWORD%" ^
-                      student-management:latest
-                    '''
-                }
+                bat '''
+                docker run -d --name student-management -p 8089:8080 ^
+                  -e "SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/studentdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true" ^
+                  -e "SPRING_DATASOURCE_USERNAME=root" ^
+                  -e "SPRING_DATASOURCE_PASSWORD=" ^
+                  student-management:latest
+                '''
 
                 // ATTEND le demarrage de Spring Boot
                 sleep time: 25, unit: 'SECONDS'
