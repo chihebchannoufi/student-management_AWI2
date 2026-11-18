@@ -1,10 +1,8 @@
 package tn.esprit.studentmanagement.controllers;
 
-import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.*;
-import tn.esprit.studentmanagement.entities.Department;
-import tn.esprit.studentmanagement.entities.Enrollment;
-import tn.esprit.studentmanagement.services.DepartmentService;
+import tn.esprit.studentmanagement.dto.DepartmentDTO;
+import tn.esprit.studentmanagement.mappers.DepartmentMapper;
 import tn.esprit.studentmanagement.services.IDepartmentService;
 
 import java.util.List;
@@ -12,22 +10,31 @@ import java.util.List;
 @RestController
 @RequestMapping("/Depatment")
 @CrossOrigin(origins = "http://localhost:4200")
-@AllArgsConstructor
 public class DepartmentController {
-    private IDepartmentService departmentService;
+    private final IDepartmentService departmentService;
+
+    public DepartmentController(IDepartmentService departmentService) {
+        this.departmentService = departmentService;
+    }
 
     @GetMapping("/getAllDepartment")
-    public List<Department> getAllDepartment() { return departmentService.getAllDepartments(); }
+    public List<DepartmentDTO> getAllDepartment() {
+        return departmentService.getAllDepartments().stream().map(DepartmentMapper::toDto).toList();
+    }
 
     @GetMapping("/getDepartment/{id}")
-    public Department getDepartment(@PathVariable Long id) { return departmentService.getDepartmentById(id); }
+    public DepartmentDTO getDepartment(@PathVariable Long id) {
+        return DepartmentMapper.toDto(departmentService.getDepartmentById(id));
+    }
 
     @PostMapping("/createDepartment")
-    public Department createDepartment(@RequestBody Department department) { return departmentService.saveDepartment(department); }
+    public DepartmentDTO createDepartment(@RequestBody DepartmentDTO dto) {
+        return DepartmentMapper.toDto(departmentService.saveDepartment(DepartmentMapper.toEntity(dto)));
+    }
 
     @PutMapping("/updateDepartment")
-    public Department updateDepartment(@RequestBody Department department) {
-        return departmentService.saveDepartment(department);
+    public DepartmentDTO updateDepartment(@RequestBody DepartmentDTO dto) {
+        return DepartmentMapper.toDto(departmentService.saveDepartment(DepartmentMapper.toEntity(dto)));
     }
 
     @DeleteMapping("/deleteDepartment/{id}")

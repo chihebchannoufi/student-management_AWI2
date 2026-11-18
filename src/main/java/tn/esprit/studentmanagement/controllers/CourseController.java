@@ -2,14 +2,11 @@ package tn.esprit.studentmanagement.controllers;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-import tn.esprit.studentmanagement.dtos.CourseCreateDto;
-import tn.esprit.studentmanagement.dtos.CourseResponseDto;
-import tn.esprit.studentmanagement.dtos.CourseUpdateDto;
-import tn.esprit.studentmanagement.entities.Course;
+import tn.esprit.studentmanagement.dto.CourseDTO;
+import tn.esprit.studentmanagement.mappers.CourseMapper;
 import tn.esprit.studentmanagement.services.ICourseService;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/courses")
@@ -22,37 +19,27 @@ public class CourseController {
     }
 
     @GetMapping
-    public List<CourseResponseDto> getAllCourses() {
+    public List<CourseDTO> getAllCourses() {
         return courseService.getAllCourses().stream()
-                .map(CourseResponseDto::fromEntity)
-                .collect(Collectors.toList());
+                .map(CourseMapper::toDto)
+                .toList();
     }
 
     @GetMapping("/{id}")
-    public CourseResponseDto getCourse(@PathVariable Long id) {
-        return CourseResponseDto.fromEntity(courseService.getCourseById(id));
+    public CourseDTO getCourse(@PathVariable Long id) {
+        return CourseMapper.toDto(courseService.getCourseById(id));
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public CourseResponseDto createCourse(@RequestBody CourseCreateDto dto) {
-        Course course = new Course();
-        course.setName(dto.getName());
-        course.setCode(dto.getCode());
-        course.setCredit(dto.getCredit());
-        course.setDescription(dto.getDescription());
-        return CourseResponseDto.fromEntity(courseService.saveCourse(course));
+    public CourseDTO createCourse(@RequestBody CourseDTO dto) {
+        return CourseMapper.toDto(courseService.saveCourse(CourseMapper.toEntity(dto)));
     }
 
     @PutMapping("/{id}")
-    public CourseResponseDto updateCourse(@PathVariable Long id, @RequestBody CourseUpdateDto dto) {
-        Course course = new Course();
-        course.setName(dto.getName());
-        course.setCode(dto.getCode());
-        course.setCredit(dto.getCredit());
-        course.setDescription(dto.getDescription());
-        course.setIdCourse(id);
-        return CourseResponseDto.fromEntity(courseService.saveCourse(course));
+    public CourseDTO updateCourse(@PathVariable Long id, @RequestBody CourseDTO dto) {
+        CourseDTO update = new CourseDTO(id, dto.name(), dto.code(), dto.credit(), dto.description());
+        return CourseMapper.toDto(courseService.saveCourse(CourseMapper.toEntity(update)));
     }
 
     @DeleteMapping("/{id}")
