@@ -50,7 +50,7 @@ pipeline {
             }
         }
 
-        // PUBLIe l'artefact SNAPSHOT ou RELEASE dans Nexus
+        // PUBLIE l'artefact SNAPSHOT ou RELEASE dans Nexus
         stage('PUBLISH TO NEXUS') {
             steps {
                 configFileProvider([configFile(fileId: 'maven-settings', variable: 'MAVEN_SETTINGS')]) {
@@ -66,17 +66,32 @@ pipeline {
             }
         }
 
-        // ARRETE l'ancien conteneur puis demarre la nouvelle image
+        // ARRETE l'ancien conteneur, demarre la nouvelle image avec MySQL, puis verifie qu'elle tourne
         stage('DEPLOY OUR IMAGE') {
             steps {
                 bat 'docker stop student-management >nul 2>&1 || echo Aucun conteneur student-management actif'
                 bat 'docker rm student-management >nul 2>&1 || echo Aucun ancien conteneur student-management'
-                bat 'docker run -d --name student-management -p 8089:8080 student-management:latest'
+
+                withCredentials([string(credentialsId: 'db-password', variable: 'DB_PASSWORD')]) {
+                    bat '''
+                    docker run -d --name student-management -p 8089:8080 ^
+                      -e "SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/studentdb?useSSL=false&allowPublicKeyRetrieval=true" ^
+                      -e "SPRING_DATASOURCE_USERNAME=appuser" ^
+                      -e "SPRING_DATASOURCE_PASSWORD=%DB_PASSWORD%" ^
+                      student-management:latest
+                    '''
+                }
+
+                // ATTEND le demarrage de Spring Boot
+                sleep time: 25, unit: 'SECONDS'
+
+                // VERIFIE que le conteneur est toujours actif, sinon affiche ses logs et echoue
+                bat 'docker ps --filter "name=student-management" --filter "status=running" --format "{{.Names}}" | findstr student-management || (docker logs student-management --tail 40 & exit /b 1)'
             }
         }
 
         /*
-        // Les stages AWS restent descriptes uniquement et seront actives plus tard
+        // Les stages AWS restent decrits uniquement et seront actives plus tard
         stage('Test AWS Credentials') {
             steps {
                 // TODO
