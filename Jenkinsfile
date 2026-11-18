@@ -168,43 +168,33 @@ EOF
         // 8. DEPLOY OUR IMAGE (Docker Hub Push)
         // =====================================
         stage('DEPLOY OUR IMAGE') {
-            steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    )
-                ]) {
-                    sh '''
-                        set -e
+    steps {
+        sh '''
+            set -e
 
-                        echo "===== DOCKER HUB LOGIN ====="
+            echo "===== REMOVE OLD CONTAINER ====="
 
-                        echo "$DOCKER_PASS" | docker login \
-                            -u "$DOCKER_USER" \
-                            --password-stdin
+            docker rm -f ${CONTAINER_NAME} || true
 
-                        echo "===== TAG IMAGES ====="
+            echo "===== DEPLOY NEW CONTAINER ====="
 
-                        docker tag ${IMAGE_NAME}:1.0 \
-                            ${DOCKER_USER}/${IMAGE_NAME}:1.0
+            docker run -d \
+                --name ${CONTAINER_NAME} \
+                --restart unless-stopped \
+                -p ${APP_PORT}:${CONTAINER_PORT} \
+                -e SPRING_DATASOURCE_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?createDatabaseIfNotExist=true" \
+                -e SPRING_DATASOURCE_USERNAME=root \
+                -e SPRING_DATASOURCE_PASSWORD= \
+                ${IMAGE_NAME}:${IMAGE_TAG}
 
-                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} \
-                            ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+            echo "===== VERIFY CONTAINER ====="
 
-                        echo "===== PUSH IMAGES ====="
+            docker ps --filter name=${CONTAINER_NAME}
 
-                        docker push ${DOCKER_USER}/${IMAGE_NAME}:1.0
-
-                        docker push ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG}
-
-                        docker logout
-                    '''
-                }
-            }
-        }
-
+            echo "SUCCESS: Docker container deployed."
+        '''
+    }
+}
         // =====================================
         // 9. Test AWS Credentials
         // =====================================
