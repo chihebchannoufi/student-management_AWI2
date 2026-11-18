@@ -1,4 +1,3 @@
-
 pipeline {
     agent any
 
@@ -137,13 +136,15 @@ EOF
                             -s nexus-settings.xml \
                             -DskipTests \
                             -DaltDeploymentRepository=nexus-snapshots::${NEXUS_URL}
+
+                        rm -f nexus-settings.xml
                     '''
                 }
             }
         }
 
         // =====================================
-        // 7. BUILD DOCKER IMAGE
+        // 7.BUILDING OUR IMAGE
         // =====================================
         stage('BUILDING OUR IMAGE') {
             steps {
@@ -164,9 +165,9 @@ EOF
         }
 
         // =====================================
-        // 8. PUSH IMAGE TO DOCKER HUB
+        // 8. DEPLOY OUR IMAGE (Docker Hub Push)
         // =====================================
-        stage('PUSH IMAGE TO DOCKER HUB') {
+        stage('DEPLOY OUR IMAGE') {
             steps {
                 withCredentials([
                     usernamePassword(
@@ -205,9 +206,9 @@ EOF
         }
 
         // =====================================
-        // 9. DEPLOY APPLICATION
+        // 9. Test AWS Credentials
         // =====================================
-        stage('DEPLOY OUR IMAGE') {
+        stage('Test AWS Credentials') {
             steps {
                 sh '''
                     set -e
@@ -215,6 +216,17 @@ EOF
                     echo "===== REMOVE OLD CONTAINER ====="
 
                     docker rm -f ${CONTAINER_NAME} || true
+                '''
+            }
+        }
+
+        // =====================================
+        // 10. SETUP TERRAFORM
+        // =====================================
+        stage('SETUP TERRAFORM') {
+            steps {
+                sh '''
+                    set -e
 
                     echo "===== DEPLOY NEW CONTAINER ====="
 
@@ -253,9 +265,9 @@ EOF
         }
 
         // =====================================
-        // 10. VERIFY DEPLOYMENT AND API
+        // 11. UPDATE KUBECONFIG
         // =====================================
-        stage('VERIFY DEPLOYMENT & API TEST') {
+        stage('UPDATE KUBECONFIG') {
             steps {
                 sh '''
                     set -e
@@ -275,6 +287,17 @@ EOF
                     fi
 
                     echo "SUCCESS: Container is running."
+                '''
+            }
+        }
+
+        // =====================================
+        // 12. DEPLOY TO AWS KUBERNETES
+        // =====================================
+        stage('DEPLOY TO AWS KUBERNETES') {
+            steps {
+                sh '''
+                    set -e
 
                     echo "===== SWAGGER API DOCS TEST ====="
 
@@ -310,24 +333,6 @@ EOF
                     echo "SUCCESS: Department API is responding."
                 '''
             }
-        }
-    }
-
-    // =====================================
-    // POST ACTIONS
-    // =====================================
-    post {
-
-        always {
-            sh 'rm -f nexus-settings.xml'
-        }
-
-        success {
-            echo 'SUCCESS: All pipeline stages completed.'
-        }
-
-        failure {
-            echo 'FAILURE: Check the Jenkins console output.'
         }
     }
 }
