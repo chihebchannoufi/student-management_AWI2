@@ -5,6 +5,10 @@ pipeline {
         timestamps()
     }
 
+    parameters {
+        booleanParam(name: 'TERRAFORM_DESTROY', defaultValue: false, description: 'Cochez pour detruire l infrastructure AWS Terraform')
+    }
+
     stages {
         // RECUPERE le code source depuis le depot Git configure dans Jenkins
         stage('CHECKOUT GIT') {
@@ -85,38 +89,126 @@ pipeline {
 
                 // VERIFIE que le conteneur est toujours actif, sinon affiche ses logs et echoue
                 bat 'docker ps --filter "name=student-management" --filter "status=running" --format "{{.Names}}" | findstr student-management || (docker logs student-management --tail 40 & exit /b 1)'
+
+                // PUBLIE la meme image sur Docker Hub avec les tags latest et numerote
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')]) {
+                    bat '''
+                    powershell -NoProfile -Command "Write-Output $env:DOCKERHUB_PASSWORD | docker login -u $env:DOCKERHUB_USERNAME --password-stdin"
+                    docker tag student-management:latest %DOCKERHUB_USERNAME%/student-management:latest
+                    docker tag student-management:latest %DOCKERHUB_USERNAME%/student-management:%BUILD_NUMBER%
+                    docker push %DOCKERHUB_USERNAME%/student-management:latest
+                    docker push %DOCKERHUB_USERNAME%/student-management:%BUILD_NUMBER%
+                    docker logout
+                    '''
+                }
             }
         }
 
-        /*
-        // Les stages AWS restent decrits uniquement et seront actives plus tard
+        // VERIFIE les identifiants AWS temporaires et le role utilise par Jenkins
         stage('Test AWS Credentials') {
             steps {
-                // TODO
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'aws-session-token', variable: 'AWS_SESSION_TOKEN')
+                ]) {
+                    bat '''
+                    set AWS_DEFAULT_REGION=us-east-1
+                    aws sts get-caller-identity
+                    '''
+                }
             }
         }
 
-        // PREPARE l'environnement Terraform pour le deploiement AWS
+        // PREPARE le cluster EKS et ses noeuds avec Terraform dans le dossier terraform
         stage('SETUP TERRAFORM') {
             steps {
-                // TODO
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'aws-session-token', variable: 'AWS_SESSION_TOKEN')
+                ]) {
+                    bat '''
+                    set AWS_DEFAULT_REGION=us-east-1
+                    cd terraform
+                    terraform init
+                    terraform validate
+                    terraform apply -auto-approve
+                    '''
+                }
             }
         }
 
-        // CONFIGURE l'acces au cluster Kubernetes AWS
+        // CONFIGURE la kubeconfig locale pour acceder au cluster student-eks
         stage('UPDATE KUBECONFIG') {
             steps {
-                // TODO
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'aws-session-token', variable: 'AWS_SESSION_TOKEN')
+                ]) {
+                    bat '''
+                    set AWS_DEFAULT_REGION=us-east-1
+                    aws eks update-kubeconfig --region us-east-1 --name student-eks
+                    '''
+                }
             }
         }
 
-        // DEPLOIE l'application sur Kubernetes AWS
+        // DEPLOIE MySQL et l'application sur Kubernetes AWS puis affiche leur statut
         stage('DEPLOY TO AWS KUBERNETES') {
             steps {
-                // TODO
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'aws-session-token', variable: 'AWS_SESSION_TOKEN'),
+                    string(credentialsId: 'mysql-root-password', variable: 'MYSQL_ROOT_PASSWORD'),
+                    usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')
+                ]) {
+                    bat '''
+                    set AWS_DEFAULT_REGION=us-east-1
+                    copy k8s\\app.yaml k8s\\app.yaml.template
+                    powershell -NoProfile -Command "$text = [IO.File]::ReadAllText('k8s/app.yaml'); [IO.File]::WriteAllText('k8s/app.yaml', $text.Replace('<DOCKERHUB_USER>', $env:DOCKERHUB_USERNAME))"
+                    kubectl create secret generic mysql-root-secret --from-literal=mysql-root-password="%MYSQL_ROOT_PASSWORD%" --dry-run=client -o yaml | kubectl apply -f -
+                    kubectl apply -f k8s/
+                    kubectl rollout status deployment/student-management --timeout=300s
+                    kubectl get pods,svc
+                    copy k8s\\app.yaml.template k8s\\app.yaml
+                    del k8s\\app.yaml.template
+                    '''
+                }
+            }
+            post {
+                always {
+                    bat '''
+                    if exist k8s\\app.yaml.template (
+                        copy k8s\\app.yaml.template k8s\\app.yaml
+                        del k8s\\app.yaml.template
+                    )
+                    '''
+                }
             }
         }
-        */
+
+        // DETRUIT l'infrastructure uniquement apres confirmation manuelle
+        stage('TERRAFORM DESTROY') {
+            when {
+                expression { return params.TERRAFORM_DESTROY }
+            }
+            steps {
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'aws-session-token', variable: 'AWS_SESSION_TOKEN')
+                ]) {
+                    bat '''
+                    set AWS_DEFAULT_REGION=us-east-1
+                    cd terraform
+                    terraform destroy -auto-approve
+                    '''
+                }
+            }
+        }
     }
 
     post {
