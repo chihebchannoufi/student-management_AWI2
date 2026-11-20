@@ -5,6 +5,13 @@ pipeline {
         timestamps()
     }
 
+    environment {
+        terraformDir = 'terraform'
+        awsCredentialsId = 'aws-credentials'
+        clusterName = 'student-eks'
+        awsRegion = 'us-east-1'
+    }
+
     parameters {
         booleanParam(name: 'TERRAFORM_DESTROY', defaultValue: false, description: 'Cochez pour detruire l infrastructure AWS Terraform')
     }
@@ -70,7 +77,7 @@ pipeline {
             }
         }
 
-        // SUPPRIME l'ancien conteneur (sans echouer s'il n'existe pas), demarre la nouvelle image avec MySQL, puis verifie qu'elle tourne
+        // SUPPRIME l'ancien conteneur, demarre la nouvelle image avec MySQL, verifie qu'elle tourne, puis la publie sur Docker Hub
         stage('DEPLOY OUR IMAGE') {
             steps {
                 // returnStatus: true ignore le code de retour si aucun conteneur n'existe
@@ -104,69 +111,82 @@ pipeline {
             }
         }
 
-        // VERIFIE les identifiants AWS temporaires et le role utilise par Jenkins
+        // LIT le fichier de credentials AWS Learner Lab, charge les variables d'environnement et verifie l'identite
         stage('Test AWS Credentials') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-                    string(credentialsId: 'aws-session-token', variable: 'AWS_SESSION_TOKEN')
-                ]) {
-                    bat '''
-                    set AWS_DEFAULT_REGION=us-east-1
-                    aws sts get-caller-identity
-                    '''
+                withCredentials([file(credentialsId: awsCredentialsId, variable: 'AWS_CREDENTIALS_FILE')]) {
+                    script {
+                        // Lecture du fichier de credentials AWS
+                        def lines = readFile(AWS_CREDENTIALS_FILE).readLines()
+
+                        // Extraction d'une valeur "cle=valeur" (split limite a 2 pour garder les '=' du token)
+                        def getValue = { String key ->
+                            def line = lines.find { it.trim().startsWith(key) }
+                            return line ? line.split('=', 2)[1].trim() : null
+                        }
+
+                        def accessKey = getValue('aws_access_key_id')
+                        def secretKey = getValue('aws_secret_access_key')
+                        def sessionToken = getValue('aws_session_token')
+
+                        if (!accessKey || !secretKey || !sessionToken) {
+                            error 'Fichier aws-credentials incomplet : aws_access_key_id, aws_secret_access_key et aws_session_token sont obligatoires.'
+                        }
+
+                        // Variables AWS visibles par tous les stages suivants (jamais affichees dans les logs)
+                        env.AWS_ACCESS_KEY_ID = accessKey
+                        env.AWS_SECRET_ACCESS_KEY = secretKey
+                        env.AWS_SESSION_TOKEN = sessionToken
+                        env.AWS_DEFAULT_REGION = awsRegion
+
+                        // Kubeconfig propre au workspace Jenkins (pas de dependance au profil utilisateur)
+                        env.KUBECONFIG = "${env.WORKSPACE}\\kubeconfig"
+
+                        echo 'AWS Credentials File Loaded'
+                    }
                 }
+                bat 'aws sts get-caller-identity'
             }
         }
 
         // PREPARE le cluster EKS et ses noeuds avec Terraform dans le dossier terraform
         stage('SETUP TERRAFORM') {
+            when {
+                expression { return !params.TERRAFORM_DESTROY }
+            }
             steps {
-                withCredentials([
-                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-                    string(credentialsId: 'aws-session-token', variable: 'AWS_SESSION_TOKEN')
-                ]) {
-                    bat '''
-                    set AWS_DEFAULT_REGION=us-east-1
-                    cd terraform
-                    terraform init
-                    terraform validate
-                    terraform apply -auto-approve
-                    '''
+                echo "Avant d'entrer dans le repertoire Terraform"
+                dir(terraformDir) {
+                    echo "Dans le repertoire Terraform"
+                    bat 'terraform init'
+                    bat 'terraform validate'
+                    bat 'terraform apply -auto-approve'
                 }
             }
         }
 
-        // CONFIGURE la kubeconfig locale pour acceder au cluster student-eks
+        // CONFIGURE la kubeconfig du workspace pour acceder au cluster student-eks
         stage('UPDATE KUBECONFIG') {
+            when {
+                expression { return !params.TERRAFORM_DESTROY }
+            }
             steps {
-                withCredentials([
-                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-                    string(credentialsId: 'aws-session-token', variable: 'AWS_SESSION_TOKEN')
-                ]) {
-                    bat '''
-                    set AWS_DEFAULT_REGION=us-east-1
-                    aws eks update-kubeconfig --region us-east-1 --name student-eks
-                    '''
-                }
+                bat 'aws eks update-kubeconfig --name %clusterName% --region %awsRegion% --kubeconfig "%KUBECONFIG%"'
             }
         }
 
         // DEPLOIE MySQL et l'application sur Kubernetes AWS puis affiche leur statut
         stage('DEPLOY TO AWS KUBERNETES') {
+            when {
+                expression { return !params.TERRAFORM_DESTROY }
+            }
             steps {
                 withCredentials([
-                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-                    string(credentialsId: 'aws-session-token', variable: 'AWS_SESSION_TOKEN'),
                     string(credentialsId: 'mysql-root-password', variable: 'MYSQL_ROOT_PASSWORD'),
                     usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')
                 ]) {
                     bat '''
-                    set AWS_DEFAULT_REGION=us-east-1
+                    aws sts get-caller-identity
                     copy k8s\\app.yaml k8s\\app.yaml.template
                     powershell -NoProfile -Command "$text = [IO.File]::ReadAllText('k8s/app.yaml'); [IO.File]::WriteAllText('k8s/app.yaml', $text.Replace('<DOCKERHUB_USER>', $env:DOCKERHUB_USERNAME))"
                     kubectl create secret generic mysql-root-secret --from-literal=mysql-root-password="%MYSQL_ROOT_PASSWORD%" --dry-run=client -o yaml | kubectl apply -f -
@@ -180,6 +200,7 @@ pipeline {
             }
             post {
                 always {
+                    // RESTAURE app.yaml meme si le deploiement a echoue
                     bat '''
                     if exist k8s\\app.yaml.template (
                         copy k8s\\app.yaml.template k8s\\app.yaml
@@ -190,22 +211,15 @@ pipeline {
             }
         }
 
-        // DETRUIT l'infrastructure uniquement apres confirmation manuelle
+        // DETRUIT l'infrastructure uniquement si le parametre TERRAFORM_DESTROY est coche
         stage('TERRAFORM DESTROY') {
             when {
                 expression { return params.TERRAFORM_DESTROY }
             }
             steps {
-                withCredentials([
-                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-                    string(credentialsId: 'aws-session-token', variable: 'AWS_SESSION_TOKEN')
-                ]) {
-                    bat '''
-                    set AWS_DEFAULT_REGION=us-east-1
-                    cd terraform
-                    terraform destroy -auto-approve
-                    '''
+                dir(terraformDir) {
+                    bat 'terraform init'
+                    bat 'terraform destroy -auto-approve'
                 }
             }
         }
@@ -213,7 +227,7 @@ pipeline {
 
     post {
         success {
-            echo 'Pipeline termine avec succes : build, tests, analyse, Nexus et Docker.'
+            echo 'Pipeline termine avec succes : build, tests, analyse, Nexus, Docker et AWS.'
         }
         failure {
             echo 'Pipeline en echec : consultez les logs du stage ou les rapports JUnit.'
