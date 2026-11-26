@@ -1,27 +1,17 @@
-// Credentials AWS du Learner Lab (portee limitee aux blocs withCredentials)
-def awsCreds = [
-    string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID'),
-    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-    string(credentialsId: 'aws-session-token',     variable: 'AWS_SESSION_TOKEN')
-]
-
 pipeline {
     agent any
 
     options {
         timestamps()
+        // Evite le stage automatique "Declarative: Checkout SCM" : le stage CHECKOUT GIT s'en charge
+        skipDefaultCheckout(true)
     }
 
     environment {
         terraformDir = 'terraform'
-        clusterName  = 'student-eks'
-        awsRegion    = 'us-east-1'
-        // Kubeconfig propre au workspace Jenkins
-        KUBECONFIG   = "${WORKSPACE}\\kubeconfig"
-    }
-
-    parameters {
-        booleanParam(name: 'TERRAFORM_DESTROY', defaultValue: false, description: 'Cochez pour detruire l infrastructure AWS Terraform')
+        awsCredentialsId = 'aws-credentials'
+        clusterName = 'student-eks'
+        awsRegion = 'us-east-1'
     }
 
     stages {
@@ -119,72 +109,82 @@ pipeline {
             }
         }
 
-        // VERIFIE la connexion AWS avec les 3 credentials Secret text du Learner Lab
+        // LIT le fichier de credentials AWS Learner Lab, charge les variables d'environnement et verifie l'identite
         stage('Test AWS Credentials') {
             steps {
-                withCredentials(awsCreds) {
-                    withEnv(["AWS_DEFAULT_REGION=${env.awsRegion}"]) {
-                        bat 'aws sts get-caller-identity'
+                withCredentials([file(credentialsId: awsCredentialsId, variable: 'AWS_CREDENTIALS_FILE')]) {
+                    script {
+                        // Lecture du fichier de credentials AWS
+                        def lines = readFile(AWS_CREDENTIALS_FILE).readLines()
+
+                        // Extraction d'une valeur "cle=valeur" (split limite a 2 pour garder les '=' du token)
+                        def getValue = { String key ->
+                            def line = lines.find { it.trim().startsWith(key) }
+                            return line ? line.split('=', 2)[1].trim() : null
+                        }
+
+                        def accessKey = getValue('aws_access_key_id')
+                        def secretKey = getValue('aws_secret_access_key')
+                        def sessionToken = getValue('aws_session_token')
+
+                        if (!accessKey || !secretKey || !sessionToken) {
+                            error 'Fichier aws-credentials incomplet : aws_access_key_id, aws_secret_access_key et aws_session_token sont obligatoires.'
+                        }
+
+                        // Variables AWS visibles par tous les stages suivants (jamais affichees dans les logs)
+                        env.AWS_ACCESS_KEY_ID = accessKey
+                        env.AWS_SECRET_ACCESS_KEY = secretKey
+                        env.AWS_SESSION_TOKEN = sessionToken
+                        env.AWS_DEFAULT_REGION = awsRegion
+
+                        // Kubeconfig propre au workspace Jenkins (pas de dependance au profil utilisateur)
+                        env.KUBECONFIG = "${env.WORKSPACE}\\kubeconfig"
+
+                        echo 'AWS Credentials File Loaded'
                     }
                 }
+                bat 'aws sts get-caller-identity'
             }
         }
 
         // PREPARE le cluster EKS et ses noeuds avec Terraform dans le dossier terraform
         stage('SETUP TERRAFORM') {
-            when {
-                expression { return !params.TERRAFORM_DESTROY }
-            }
             steps {
-                withCredentials(awsCreds) {
-                    withEnv(["AWS_DEFAULT_REGION=${env.awsRegion}"]) {
-                        dir(terraformDir) {
-                            bat 'terraform init'
-                            bat 'terraform validate'
-                            bat 'terraform apply -auto-approve'
-                        }
-                    }
+                echo "Avant d'entrer dans le repertoire Terraform"
+                dir(terraformDir) {
+                    echo "Dans le repertoire Terraform"
+                    bat 'terraform init'
+                    bat 'terraform validate'
+                    bat 'terraform apply -auto-approve'
                 }
             }
         }
 
         // CONFIGURE la kubeconfig du workspace pour acceder au cluster student-eks
         stage('UPDATE KUBECONFIG') {
-            when {
-                expression { return !params.TERRAFORM_DESTROY }
-            }
             steps {
-                withCredentials(awsCreds) {
-                    withEnv(["AWS_DEFAULT_REGION=${env.awsRegion}"]) {
-                        bat 'aws eks update-kubeconfig --name %clusterName% --region %awsRegion% --kubeconfig "%KUBECONFIG%"'
-                    }
-                }
+                bat 'aws eks update-kubeconfig --name %clusterName% --region %awsRegion% --kubeconfig "%KUBECONFIG%"'
             }
         }
 
         // DEPLOIE MySQL et l'application sur Kubernetes AWS puis affiche leur statut
         stage('DEPLOY TO AWS KUBERNETES') {
-            when {
-                expression { return !params.TERRAFORM_DESTROY }
-            }
             steps {
-                withCredentials(awsCreds + [
+                withCredentials([
                     string(credentialsId: 'mysql-root-password', variable: 'MYSQL_ROOT_PASSWORD'),
                     usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')
                 ]) {
-                    withEnv(["AWS_DEFAULT_REGION=${env.awsRegion}"]) {
-                        bat '''
-                        aws sts get-caller-identity
-                        copy k8s\\app.yaml k8s\\app.yaml.template
-                        powershell -NoProfile -Command "$text = [IO.File]::ReadAllText('k8s/app.yaml'); [IO.File]::WriteAllText('k8s/app.yaml', $text.Replace('<DOCKERHUB_USER>', $env:DOCKERHUB_USERNAME))"
-                        kubectl create secret generic mysql-root-secret --from-literal=mysql-root-password="%MYSQL_ROOT_PASSWORD%" --dry-run=client -o yaml | kubectl apply -f -
-                        kubectl apply -f k8s/
-                        kubectl rollout status deployment/student-management --timeout=300s
-                        kubectl get pods,svc
-                        copy k8s\\app.yaml.template k8s\\app.yaml
-                        del k8s\\app.yaml.template
-                        '''
-                    }
+                    bat '''
+                    aws sts get-caller-identity
+                    copy k8s\\app.yaml k8s\\app.yaml.template
+                    powershell -NoProfile -Command "$text = [IO.File]::ReadAllText('k8s/app.yaml'); [IO.File]::WriteAllText('k8s/app.yaml', $text.Replace('<DOCKERHUB_USER>', $env:DOCKERHUB_USERNAME))"
+                    kubectl create secret generic mysql-root-secret --from-literal=mysql-root-password="%MYSQL_ROOT_PASSWORD%" --dry-run=client -o yaml | kubectl apply -f -
+                    kubectl apply -f k8s/
+                    kubectl rollout status deployment/student-management --timeout=300s
+                    kubectl get pods,svc
+                    copy k8s\\app.yaml.template k8s\\app.yaml
+                    del k8s\\app.yaml.template
+                    '''
                 }
             }
             post {
@@ -200,22 +200,16 @@ pipeline {
             }
         }
 
-        // DETRUIT l'infrastructure uniquement si le parametre TERRAFORM_DESTROY est coche
-        stage('TERRAFORM DESTROY') {
-            when {
-                expression { return params.TERRAFORM_DESTROY }
-            }
+        // Optionnel : detruire l'infrastructure (a decommenter uniquement pour supprimer le cluster)
+        /*
+        stage('TEARDOWN TERRAFORM') {
             steps {
-                withCredentials(awsCreds) {
-                    withEnv(["AWS_DEFAULT_REGION=${env.awsRegion}"]) {
-                        dir(terraformDir) {
-                            bat 'terraform init'
-                            bat 'terraform destroy -auto-approve'
-                        }
-                    }
+                dir(terraformDir) {
+                    bat 'terraform destroy -auto-approve'
                 }
             }
         }
+        */
     }
 
     post {
