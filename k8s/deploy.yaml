@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ALLOW_EMPTY_PASSWORD
+              value: "yes"
+            - name: MYSQL_DATABASE
+              value: "studentdb"
+          ports:
+            - containerPort: 3306
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+spec:
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: student-management
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: student-management
+  template:
+    metadata:
+      labels:
+        app: student-management
+    spec:
+      containers:
+        - name: student-management
+          image: chdouda/student-management:1.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8089
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://mysql-service:3306/studentdb?createDatabaseIfNotExist=true"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "root"
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: ""
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: student-management-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: student-management
+  ports:
+    - port: 80
+      targetPort: 8089

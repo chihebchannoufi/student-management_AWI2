@@ -143,23 +143,18 @@ EOF
             }
         }
 
-        // =====================================
-        // 7.BUILDING OUR IMAGE
+       // =====================================
+        // 7. BUILDING OUR IMAGE
         // =====================================
         stage('BUILDING OUR IMAGE') {
             steps {
                 sh '''
                     set -e
-
                     echo "===== BUILD DOCKER IMAGE ====="
-
                     docker build \
-                        -t ${IMAGE_NAME}:1.0 \
-                        -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                        -t chdouda/${IMAGE_NAME}:1.0 \
+                        -t chdouda/${IMAGE_NAME}:${IMAGE_TAG} \
                         -f Dockerfile .
-
-                    echo "===== AVAILABLE IMAGES ====="
-                    docker images ${IMAGE_NAME}
                 '''
             }
         }
@@ -168,142 +163,95 @@ EOF
         // 8. DEPLOY OUR IMAGE (Docker Hub Push)
         // =====================================
         stage('DEPLOY OUR IMAGE') {
-    steps {
-        sh '''
-            set -e
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
+                    sh '''
+                        set -e
+                        echo "===== PUSH IMAGE TO DOCKER HUB ====="
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push chdouda/${IMAGE_NAME}:1.0
+                        docker push chdouda/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker logout
+                        echo "SUCCESS: Image pushed to Docker Hub."
+                    '''
+                }
+            }
+        }
 
-            echo "===== REMOVE OLD CONTAINER ====="
-
-            docker rm -f ${CONTAINER_NAME} || true
-
-            echo "===== DEPLOY NEW CONTAINER ====="
-
-            docker run -d \
-                --name ${CONTAINER_NAME} \
-                --restart unless-stopped \
-                -p ${APP_PORT}:${CONTAINER_PORT} \
-                -e SPRING_DATASOURCE_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?createDatabaseIfNotExist=true" \
-                -e SPRING_DATASOURCE_USERNAME=root \
-                -e SPRING_DATASOURCE_PASSWORD= \
-                ${IMAGE_NAME}:${IMAGE_TAG}
-
-            echo "===== VERIFY CONTAINER ====="
-
-            docker ps --filter name=${CONTAINER_NAME}
-
-            echo "SUCCESS: Docker container deployed."
-        '''
-    }
-}
-       
-       
         // =====================================
         // 9. TEST AWS CREDENTIALS
         // =====================================
         stage('TEST AWS CREDENTIALS') {
             steps {
                 withCredentials([
-                    string(
-                        credentialsId: 'aws_access_key_id',
-                        variable: 'AWS_ACCESS_KEY_ID'
-                    ),
-                    string(
-                        credentialsId: 'aws_secret_access_key',
-                        variable: 'AWS_SECRET_ACCESS_KEY'
-                    ),
-                    string(
-                        credentialsId: 'aws_session_token',
-                        variable: 'AWS_SESSION_TOKEN'
-                    )
+                    string(credentialsId: 'aws_access_key_id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws_secret_access_key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'aws_session_token', variable: 'AWS_SESSION_TOKEN')
                 ]) {
                     sh '''
                         set -eu
                         set +x
-
-                        export AWS_DEFAULT_REGION=us-east-1
-
                         echo "===== CHECK AWS CLI ====="
                         aws --version
-
                         echo "===== VERIFY AWS CONNECTION ====="
-                        aws sts get-caller-identity
-
+                        aws sts get-caller-identity --output json
                         echo "SUCCESS: Jenkins connected to AWS."
                     '''
                 }
             }
         }
 
-      
         // =====================================
-        // 10. TERRAFORM INIT, VALIDATE AND PLAN
+        // 10. SETUP TERRAFORM
         // =====================================
-        stage('TERRAFORM PLAN') {
+        stage('SETUP TERRAFORM') {
             steps {
                 withCredentials([
-                    string(
-                        credentialsId: 'aws_access_key_id',
-                        variable: 'AWS_ACCESS_KEY_ID'
-                    ),
-                    string(
-                        credentialsId: 'aws_secret_access_key',
-                        variable: 'AWS_SECRET_ACCESS_KEY'
-                    ),
-                    string(
-                        credentialsId: 'aws_session_token',
-                        variable: 'AWS_SESSION_TOKEN'
-                    )
+                    string(credentialsId: 'aws_access_key_id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws_secret_access_key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'aws_session_token', variable: 'AWS_SESSION_TOKEN')
                 ]) {
                     sh '''
                         set -eu
                         set +x
-
-                        export AWS_DEFAULT_REGION=us-east-1
-
-                        echo "===== TERRAFORM VERSION ====="
-                        terraform -version
-
-                        echo "===== TERRAFORM INIT ====="
                         cd terraform
-                        terraform init -input=false
-
+                        echo "===== TERRAFORM INIT ====="
+                        terraform init
                         echo "===== TERRAFORM VALIDATE ====="
                         terraform validate
-
-                        echo "===== TERRAFORM PLAN ====="
-                        terraform plan -input=false -out=tfplan
-
-                        echo "SUCCESS: Terraform plan generated."
+                        echo "===== TERRAFORM APPLY ====="
+                        terraform apply -auto-approve
+                        echo "SUCCESS: EKS Cluster ready."
                     '''
                 }
             }
         }
-
 
         // =====================================
         // 11. UPDATE KUBECONFIG
         // =====================================
         stage('UPDATE KUBECONFIG') {
             steps {
-                sh '''
-                    set -e
-
-                    echo "===== CONTAINER VERIFICATION ====="
-
-                    docker ps --filter name=${CONTAINER_NAME}
-
-                    RUNNING=$(docker inspect \
-                        --format='{{.State.Running}}' \
-                        ${CONTAINER_NAME})
-
-                    if [ "$RUNNING" != "true" ]; then
-                        echo "ERROR: Container is not running."
-                        docker logs ${CONTAINER_NAME}
-                        exit 1
-                    fi
-
-                    echo "SUCCESS: Container is running."
-                '''
+                withCredentials([
+                    string(credentialsId: 'aws_access_key_id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws_secret_access_key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'aws_session_token', variable: 'AWS_SESSION_TOKEN')
+                ]) {
+                    sh '''
+                        set -eu
+                        set +x
+                        echo "===== UPDATE KUBECONFIG ====="
+                        aws eks update-kubeconfig --region us-east-1 --name student-management-eks
+                        kubectl get nodes
+                        echo "SUCCESS: Kubeconfig updated."
+                    '''
+                }
             }
         }
 
@@ -312,43 +260,42 @@ EOF
         // =====================================
         stage('DEPLOY TO AWS KUBERNETES') {
             steps {
-                sh '''
-                    set -e
+                withCredentials([
+                    string(credentialsId: 'aws_access_key_id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws_secret_access_key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'aws_session_token', variable: 'AWS_SESSION_TOKEN')
+                ]) {
+                    sh '''
+                        set -eu
+                        set +x
+                        echo "===== DEPLOY TO EKS ====="
+                        kubectl apply -f k8s/deploy.yaml
+                        kubectl rollout status deployment/mysql --timeout=180s
+                        kubectl rollout status deployment/student-management --timeout=180s
 
-                    echo "===== SWAGGER API DOCS TEST ====="
-
-                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-                        --connect-timeout 5 \
-                        --max-time 30 \
-                        http://host.docker.internal:${APP_PORT}/student/v3/api-docs)
-
-                    echo "Swagger HTTP status: $HTTP_CODE"
-
-                    if [ "$HTTP_CODE" != "200" ]; then
-                        echo "ERROR: Swagger verification failed."
-                        docker logs ${CONTAINER_NAME}
-                        exit 1
-                    fi
-
-                    echo "SUCCESS: Swagger is responding."
-
-                    echo "===== DEPARTMENT API TEST ====="
-
-                    API_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-                        --connect-timeout 5 \
-                        --max-time 30 \
-                        http://host.docker.internal:${APP_PORT}/student/Depatment/getAllDepartment)
-
-                    echo "Department API HTTP status: $API_CODE"
-
-                    if [ "$API_CODE" != "200" ]; then
-                        echo "ERROR: Department API verification failed."
-                        exit 1
-                    fi
-
-                    echo "SUCCESS: Department API is responding."
-                '''
+                        echo "===== GET LOADBALANCER URL ====="
+                        kubectl get pods
+                        kubectl get svc student-management-service
+                        echo "SUCCESS: Deployed to AWS Kubernetes."
+                    '''
+                }
             }
+        }
+    }
+
+    // =====================================
+    // EMAIL NOTIFICATIONS
+    // =====================================
+    post {
+        success {
+            mail to: 'chnada780@gmail.com',
+                 subject: "SUCCESS: Pipeline ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                 body: "El build #${env.BUILD_NUMBER} nja7 w t-deploya 3la AWS EKS.\nChouf les logs (w el URL mta3 Swagger): ${env.BUILD_URL}console"
+        }
+        failure {
+            mail to: 'chnada780@gmail.com',
+                 subject: "FAILURE: Pipeline ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                 body: "El build #${env.BUILD_NUMBER} ta7.\nChouf el erreur: ${env.BUILD_URL}console"
         }
     }
 }
