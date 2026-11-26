@@ -337,7 +337,7 @@ EOF
                     API_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
                         --connect-timeout 5 \
                         --max-time 30 \
-                        http://host.docker.internal:${APP_PORT}/student/Department/getAllDepartment)
+                        http://host.docker.internal:${APP_PORT}/student/Depatment/getAllDepartment)
 
                     echo "Department API HTTP status: $API_CODE"
 
