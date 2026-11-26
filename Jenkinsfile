@@ -1,4 +1,5 @@
-// Credentials AWS du Learner Lab (portee limitee aux blocs withCredentials)
+
+/* Credentials AWS du Learner Lab (portee limitee aux blocs withCredentials) */
 def awsCreds = [
     string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID'),
     string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
@@ -16,12 +17,12 @@ pipeline {
         terraformDir = 'terraform'
         clusterName  = 'student-eks'
         awsRegion    = 'us-east-1'
-        // Kubeconfig propre au workspace Jenkins
-        KUBECONFIG   = "${WORKSPACE}\\kubeconfig"
+        KUBECONFIG  = "${WORKSPACE}\\kubeconfig"
     }
 
     stages {
-        // RECUPERE le code source depuis le depot Git configure dans Jenkins
+
+        // RECUPERE le code source depuis le depot Git
         stage('CHECKOUT GIT') {
             steps {
                 checkout scm
@@ -35,21 +36,22 @@ pipeline {
             }
         }
 
-        // CONSTRUIT l'application Spring Boot sans executer les tests
+        // CONSTRUIT l'application Spring Boot
         stage('ARTIFACT CONSTRUCTION') {
             steps {
                 bat '.\\mvnw.cmd package -DskipTests'
             }
         }
 
-        // EXECUTE les tests unitaires et conserve leurs rapports JUnit
+        // EXECUTE les tests unitaires et conserve les rapports JUnit
         stage('UNIT TESTS') {
             steps {
                 bat '.\\mvnw.cmd test'
             }
             post {
                 always {
-                    junit 'target/surefire-reports/*.xml'
+                    junit allowEmptyResults: true,
+                          testResults: 'target/surefire-reports/*.xml'
                 }
             }
         }
@@ -57,36 +59,46 @@ pipeline {
         // ANALYSE la qualite du code avec SonarQube
         stage('MVN SONARQUBE') {
             steps {
-                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                withCredentials([
+                    string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')
+                ]) {
                     withSonarQubeEnv('SonarQube') {
-                        bat '.\\mvnw.cmd verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=student-management -Dsonar.host.url=http://localhost:9000 -Dsonar.token=%SONAR_TOKEN%'
+                        bat '''
+                        .\\mvnw.cmd verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar ^
+                        -Dsonar.projectKey=student-management ^
+                        -Dsonar.host.url=http://localhost:9000 ^
+                        -Dsonar.token=%SONAR_TOKEN%
+                        '''
                     }
                 }
             }
         }
 
-        // PUBLIE l'artefact SNAPSHOT ou RELEASE dans Nexus
+        // PUBLIE l'artefact dans Nexus
         stage('PUBLISH TO NEXUS') {
             steps {
-                configFileProvider([configFile(fileId: 'maven-settings', variable: 'MAVEN_SETTINGS')]) {
+                configFileProvider([
+                    configFile(fileId: 'maven-settings', variable: 'MAVEN_SETTINGS')
+                ]) {
                     bat '.\\mvnw.cmd deploy -DskipTests -s "%MAVEN_SETTINGS%"'
                 }
             }
         }
 
-        // CONSTRUIT les images Docker taguees avec le build et latest
+        // CONSTRUIT les images Docker
         stage('BUILDING OUR IMAGE') {
             steps {
                 bat 'docker build -t student-management:%BUILD_NUMBER% -t student-management:latest .'
             }
         }
 
-        // SUPPRIME l'ancien conteneur, demarre la nouvelle image avec MySQL, verifie qu'elle tourne, puis la publie sur Docker Hub
+        // DEPLOIE localement et publie sur Docker Hub
         stage('DEPLOY OUR IMAGE') {
             steps {
-                // returnStatus: true ignore le code de retour si aucun conteneur n'existe
+                // Ignore si aucun ancien conteneur n'existe
                 bat(returnStatus: true, script: 'docker rm -f student-management')
 
+                // Demarre le conteneur Spring Boot
                 bat '''
                 docker run -d --name student-management -p 8089:8080 ^
                   -e "SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/studentdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true" ^
@@ -95,27 +107,38 @@ pipeline {
                   student-management:latest
                 '''
 
-                // ATTEND le demarrage de Spring Boot
+                // Attend le demarrage
                 sleep time: 25, unit: 'SECONDS'
 
-                // VERIFIE que le conteneur est toujours actif, sinon affiche ses logs et echoue
-                bat 'docker ps --filter "name=student-management" --filter "status=running" --format "{{.Names}}" | findstr student-management || (docker logs student-management --tail 40 & exit /b 1)'
+                // Verifie que le conteneur est actif
+                bat '''
+                docker ps --filter "name=student-management" --filter "status=running" --format "{{.Names}}" | findstr student-management || (docker logs student-management --tail 40 & exit /b 1)
+                '''
 
-                // PUBLIE la meme image sur Docker Hub avec les tags latest et numerote
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')]) {
+                // Publie sur Docker Hub
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DOCKERHUB_USERNAME',
+                        passwordVariable: 'DOCKERHUB_PASSWORD'
+                    )
+                ]) {
                     bat '''
                     powershell -NoProfile -Command "Write-Output $env:DOCKERHUB_PASSWORD | docker login -u $env:DOCKERHUB_USERNAME --password-stdin"
+
                     docker tag student-management:latest %DOCKERHUB_USERNAME%/student-management:latest
                     docker tag student-management:latest %DOCKERHUB_USERNAME%/student-management:%BUILD_NUMBER%
+
                     docker push %DOCKERHUB_USERNAME%/student-management:latest
                     docker push %DOCKERHUB_USERNAME%/student-management:%BUILD_NUMBER%
+
                     docker logout
                     '''
                 }
             }
         }
 
-        // VERIFIE la connexion AWS avec les 3 credentials Secret text du Learner Lab
+        // VERIFIE les credentials AWS
         stage('Test AWS Credentials') {
             steps {
                 withCredentials(awsCreds) {
@@ -126,7 +149,7 @@ pipeline {
             }
         }
 
-        // PREPARE le cluster EKS et ses noeuds avec Terraform dans le dossier terraform
+        // PREPARE le cluster EKS avec Terraform
         stage('SETUP TERRAFORM') {
             steps {
                 withCredentials(awsCreds) {
@@ -141,7 +164,7 @@ pipeline {
             }
         }
 
-        // CONFIGURE la kubeconfig du workspace pour acceder au cluster student-eks
+        // CONFIGURE le kubeconfig
         stage('UPDATE KUBECONFIG') {
             steps {
                 withCredentials(awsCreds) {
@@ -152,31 +175,46 @@ pipeline {
             }
         }
 
-        // DEPLOIE MySQL et l'application sur Kubernetes AWS puis affiche leur statut
+        // DEPLOIE MySQL et l'application sur Kubernetes
         stage('DEPLOY TO AWS KUBERNETES') {
             steps {
                 withCredentials(awsCreds + [
-                    string(credentialsId: 'mysql-root-password', variable: 'MYSQL_ROOT_PASSWORD'),
-                    usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')
+                    string(
+                        credentialsId: 'mysql-root-password',
+                        variable: 'MYSQL_ROOT_PASSWORD'
+                    ),
+                    usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DOCKERHUB_USERNAME',
+                        passwordVariable: 'DOCKERHUB_PASSWORD'
+                    )
                 ]) {
                     withEnv(["AWS_DEFAULT_REGION=${env.awsRegion}"]) {
                         bat '''
                         aws sts get-caller-identity
+
                         copy k8s\\app.yaml k8s\\app.yaml.template
+
                         powershell -NoProfile -Command "$text = [IO.File]::ReadAllText('k8s/app.yaml'); [IO.File]::WriteAllText('k8s/app.yaml', $text.Replace('<DOCKERHUB_USER>', $env:DOCKERHUB_USERNAME))"
+
                         kubectl create secret generic mysql-root-secret --from-literal=mysql-root-password="%MYSQL_ROOT_PASSWORD%" --dry-run=client -o yaml | kubectl apply -f -
+
                         kubectl apply -f k8s/
+
                         kubectl rollout status deployment/student-management --timeout=300s
+
                         kubectl get pods,svc
+
                         copy k8s\\app.yaml.template k8s\\app.yaml
                         del k8s\\app.yaml.template
                         '''
                     }
                 }
             }
+
+            // RESTAURE app.yaml meme en cas d'echec du deploiement
             post {
                 always {
-                    // RESTAURE app.yaml meme si le deploiement a echoue
                     bat '''
                     if exist k8s\\app.yaml.template (
                         copy k8s\\app.yaml.template k8s\\app.yaml
@@ -188,73 +226,74 @@ pipeline {
         }
     }
 
+    // NOTIFICATIONS GLOBALES DU PIPELINE
     post {
+
         success {
             echo 'Pipeline termine avec succes : build, tests, analyse, Nexus, Docker et AWS.'
-        }
-        failure {
-            echo 'Pipeline en echec : consultez les logs du stage ou les rapports JUnit.'
-        }
-    }
-}
-post {
 
-    success {
-        emailext(
-            subject: "SUCCESS - ${JOB_NAME} #${BUILD_NUMBER}",
-            body: """
-                Bonjour,
+            emailext(
+                subject: "SUCCESS - ${JOB_NAME} #${BUILD_NUMBER}",
+                body: """
+Bonjour,
 
-                Le pipeline Jenkins s'est exécuté avec succès.
+Le pipeline Jenkins s'est execute avec succes.
 
-                Projet : ${JOB_NAME}
-                Build : #${BUILD_NUMBER}
-                Statut : SUCCESS
-                Durée : ${currentBuild.durationString}
+Projet : ${JOB_NAME}
+Build : #${BUILD_NUMBER}
+Statut : SUCCESS
+Duree : ${currentBuild.durationString}
 
-                Consulter le build :
-                ${BUILD_URL}
+Consulter le build :
+${BUILD_URL}
 
-                Cordialement,
-                Jenkins CI/CD
-            """,
-            to: "channoufichiheb@gmail.com"
-        )
-    }
-
-    failure {
-        script {
-            // Génération du fichier contenant les logs
-            def logs = currentBuild.rawBuild.getLog(Integer.MAX_VALUE)
-
-            writeFile(
-                file: "jenkins-build-logs.txt",
-                text: logs.join("\n")
+Cordialement,
+Jenkins CI/CD
+                """,
+                to: "channoufichiheb@gmail.com"
             )
         }
 
-        emailext(
-            subject: "FAILURE - ${JOB_NAME} #${BUILD_NUMBER}",
-            body: """
-                Bonjour,
+        failure {
+            echo 'Pipeline en echec : consultez les logs du stage ou les rapports JUnit.'
 
-                Le pipeline Jenkins a échoué.
+            // GENERE LE FICHIER CONTENANT LES LOGS
+            script {
+                def logs = currentBuild.rawBuild.getLog(Integer.MAX_VALUE)
 
-                Projet : ${JOB_NAME}
-                Build : #${BUILD_NUMBER}
-                Statut : FAILURE
-                Stage : ${env.STAGE_NAME ?: 'Consulter les stages Jenkins'}
+                writeFile(
+                    file: "jenkins-build-logs.txt",
+                    text: logs.join("\n")
+                )
+            }
 
-                Consultez les logs du build :
-                ${BUILD_URL}console
+            // ENVOIE UN EMAIL AVEC LES LOGS EN PIECE JOINTE
+            emailext(
+                subject: "FAILURE - ${JOB_NAME} #${BUILD_NUMBER}",
+                body: """
+Bonjour,
 
-                Le fichier contenant les logs du build est joint à cet email.
+Le pipeline Jenkins a echoue.
 
-                Cordialement,
-                Jenkins CI/CD
-            """,
-            to: "channoufichiheb@gmail.com",
-            attachmentsPattern: "jenkins-build-logs.txt"
-        )
+Projet : ${JOB_NAME}
+Build : #${BUILD_NUMBER}
+Statut : FAILURE
+
+Consultez les logs du build :
+${BUILD_URL}console
+
+Le fichier contenant les logs du build est joint a cet email.
+
+Cordialement,
+Jenkins CI/CD
+                """,
+                to: "channoufichiheb@gmail.com",
+                attachmentsPattern: "jenkins-build-logs.txt"
+            )
+        }
+
+        always {
+            echo "Pipeline termine. Statut final : ${currentBuild.currentResult}"
+        }
     }
 }
