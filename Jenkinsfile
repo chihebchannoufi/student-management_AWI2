@@ -214,10 +214,15 @@ EOF
                         set +x
 
                         echo "===== CHECK AWS CLI ====="
-                        aws --version
+                        docker run --rm amazon/aws-cli --version
 
                         echo "===== VERIFY AWS CONNECTION ====="
-                        aws sts get-caller-identity --output json
+                        docker run --rm \
+                            -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+                            -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+                            -e AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN}" \
+                            -e AWS_DEFAULT_REGION="us-east-1" \
+                            amazon/aws-cli sts get-caller-identity --output json
 
                         echo "SUCCESS: Jenkins connected to AWS."
                     '''
