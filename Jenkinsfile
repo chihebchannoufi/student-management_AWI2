@@ -10,6 +10,8 @@ pipeline {
 
     options {
         timestamps()
+        // Supprime le stage automatique "Declarative: Checkout SCM" (CHECKOUT GIT s'en charge)
+        skipDefaultCheckout(true)
     }
 
     environment {
