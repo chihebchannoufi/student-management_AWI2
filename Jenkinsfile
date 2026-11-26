@@ -1,4 +1,3 @@
-
 /* Credentials AWS du Learner Lab (portee limitee aux blocs withCredentials) */
 def awsCreds = [
     string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID'),
@@ -17,7 +16,7 @@ pipeline {
         terraformDir = 'terraform'
         clusterName  = 'student-eks'
         awsRegion    = 'us-east-1'
-        KUBECONFIG  = "${WORKSPACE}\\kubeconfig"
+        KUBECONFIG   = "${WORKSPACE}\\kubeconfig"
     }
 
     stages {
@@ -232,63 +231,45 @@ pipeline {
         success {
             echo 'Pipeline termine avec succes : build, tests, analyse, Nexus, Docker et AWS.'
 
+            // ENVOIE UN EMAIL DE SUCCES
             emailext(
-                subject: "SUCCESS - ${JOB_NAME} #${BUILD_NUMBER}",
+                subject: "SUCCESS - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                mimeType: 'text/html',
+                to: 'channoufichiheb@gmail.com',
                 body: """
-Bonjour,
-
-Le pipeline Jenkins s'est execute avec succes.
-
-Projet : ${JOB_NAME}
-Build : #${BUILD_NUMBER}
-Statut : SUCCESS
-Duree : ${currentBuild.durationString}
-
-Consulter le build :
-${BUILD_URL}
-
-Cordialement,
-Jenkins CI/CD
-                """,
-                to: "channoufichiheb@gmail.com"
+                    <h3 style="color:#2e7d32">Pipeline reussi</h3>
+                    <p>
+                      Projet : <b>${env.JOB_NAME}</b><br>
+                      Build : <b>#${env.BUILD_NUMBER}</b><br>
+                      Statut : <b>SUCCESS</b><br>
+                      Duree : ${currentBuild.durationString.replace(' and counting', '')}
+                    </p>
+                    <p>Etapes validees : build, tests, SonarQube, Nexus, Docker et AWS EKS.</p>
+                    <p><a href="${env.BUILD_URL}">Ouvrir le build</a></p>
+                """
             )
         }
 
         failure {
             echo 'Pipeline en echec : consultez les logs du stage ou les rapports JUnit.'
 
-            // GENERE LE FICHIER CONTENANT LES LOGS
-            script {
-                def logs = currentBuild.rawBuild.getLog(Integer.MAX_VALUE)
-
-                writeFile(
-                    file: "jenkins-build-logs.txt",
-                    text: logs.join("\n")
-                )
-            }
-
-            // ENVOIE UN EMAIL AVEC LES LOGS EN PIECE JOINTE
+            // ENVOIE UN EMAIL D'ECHEC AVEC LE JOURNAL DU BUILD EN PIECE JOINTE
             emailext(
-                subject: "FAILURE - ${JOB_NAME} #${BUILD_NUMBER}",
+                subject: "FAILURE - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                mimeType: 'text/html',
+                to: 'channoufichiheb@gmail.com',
+                attachLog: true,
+                compressLog: true,
                 body: """
-Bonjour,
-
-Le pipeline Jenkins a echoue.
-
-Projet : ${JOB_NAME}
-Build : #${BUILD_NUMBER}
-Statut : FAILURE
-
-Consultez les logs du build :
-${BUILD_URL}console
-
-Le fichier contenant les logs du build est joint a cet email.
-
-Cordialement,
-Jenkins CI/CD
-                """,
-                to: "channoufichiheb@gmail.com",
-                attachmentsPattern: "jenkins-build-logs.txt"
+                    <h3 style="color:#c62828">Pipeline en echec</h3>
+                    <p>
+                      Projet : <b>${env.JOB_NAME}</b><br>
+                      Build : <b>#${env.BUILD_NUMBER}</b><br>
+                      Statut : <b>FAILURE</b>
+                    </p>
+                    <p><a href="${env.BUILD_URL}console">Ouvrir la console du build</a></p>
+                    <p>Le journal complet du build est joint a ce message.</p>
+                """
             )
         }
 
