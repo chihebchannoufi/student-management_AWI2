@@ -195,31 +195,35 @@ EOF
         '''
     }
 }
+       
         // =====================================
-        // 9. Test AWS Credentials
+        // 9. TEST AWS CREDENTIALS
         // =====================================
         stage('Test AWS Credentials') {
-    steps {
-        withCredentials([[
-            $class: 'AmazonWebServicesCredentialsBinding',
-            credentialsId: 'aws-credentials',
-            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-            sh '''
-                set -e
+            steps {
+                withCredentials([
+                    string(credentialsId: 'aws_access_key_id',
+                           variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws_secret_access_key',
+                           variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'aws_session_token',
+                           variable: 'AWS_SESSION_TOKEN')
+                ]) {
+                    sh '''
+                        set -eu
+                        set +x
 
-                echo "===== CHECK AWS CLI ====="
-                aws --version
+                        echo "===== CHECK AWS CLI ====="
+                        aws --version
 
-                echo "===== VERIFY AWS CREDENTIALS ====="
-                aws sts get-caller-identity --output json
+                        echo "===== VERIFY AWS CONNECTION ====="
+                        aws sts get-caller-identity --output json
 
-                echo "SUCCESS: Jenkins connected to AWS."
-            '''
+                        echo "SUCCESS: Jenkins connected to AWS."
+                    '''
+                }
+            }
         }
-    }
-}
         // =====================================
         // 10. SETUP TERRAFORM
         // =====================================
