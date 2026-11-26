@@ -197,3 +197,64 @@ pipeline {
         }
     }
 }
+post {
+
+    success {
+        emailext(
+            subject: "SUCCESS - ${JOB_NAME} #${BUILD_NUMBER}",
+            body: """
+                Bonjour,
+
+                Le pipeline Jenkins s'est exécuté avec succès.
+
+                Projet : ${JOB_NAME}
+                Build : #${BUILD_NUMBER}
+                Statut : SUCCESS
+                Durée : ${currentBuild.durationString}
+
+                Consulter le build :
+                ${BUILD_URL}
+
+                Cordialement,
+                Jenkins CI/CD
+            """,
+            to: "channoufichiheb@gmail.com"
+        )
+    }
+
+    failure {
+        script {
+            // Génération du fichier contenant les logs
+            def logs = currentBuild.rawBuild.getLog(Integer.MAX_VALUE)
+
+            writeFile(
+                file: "jenkins-build-logs.txt",
+                text: logs.join("\n")
+            )
+        }
+
+        emailext(
+            subject: "FAILURE - ${JOB_NAME} #${BUILD_NUMBER}",
+            body: """
+                Bonjour,
+
+                Le pipeline Jenkins a échoué.
+
+                Projet : ${JOB_NAME}
+                Build : #${BUILD_NUMBER}
+                Statut : FAILURE
+                Stage : ${env.STAGE_NAME ?: 'Consulter les stages Jenkins'}
+
+                Consultez les logs du build :
+                ${BUILD_URL}console
+
+                Le fichier contenant les logs du build est joint à cet email.
+
+                Cordialement,
+                Jenkins CI/CD
+            """,
+            to: "channoufichiheb@gmail.com",
+            attachmentsPattern: "jenkins-build-logs.txt"
+        )
+    }
+}
