@@ -196,82 +196,89 @@ EOF
     }
 }
        
+       
         // =====================================
         // 9. TEST AWS CREDENTIALS
         // =====================================
-        stage('Test AWS Credentials') {
+        stage('TEST AWS CREDENTIALS') {
             steps {
                 withCredentials([
-                    string(credentialsId: 'aws_access_key_id',
-                           variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws_secret_access_key',
-                           variable: 'AWS_SECRET_ACCESS_KEY'),
-                    string(credentialsId: 'aws_session_token',
-                           variable: 'AWS_SESSION_TOKEN')
+                    string(
+                        credentialsId: 'aws_access_key_id',
+                        variable: 'AWS_ACCESS_KEY_ID'
+                    ),
+                    string(
+                        credentialsId: 'aws_secret_access_key',
+                        variable: 'AWS_SECRET_ACCESS_KEY'
+                    ),
+                    string(
+                        credentialsId: 'aws_session_token',
+                        variable: 'AWS_SESSION_TOKEN'
+                    )
                 ]) {
                     sh '''
                         set -eu
                         set +x
 
+                        export AWS_DEFAULT_REGION=us-east-1
+
                         echo "===== CHECK AWS CLI ====="
-                        docker run --rm amazon/aws-cli --version
+                        aws --version
 
                         echo "===== VERIFY AWS CONNECTION ====="
-                        docker run --rm \
-                            -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
-                            -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
-                            -e AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN}" \
-                            -e AWS_DEFAULT_REGION="us-east-1" \
-                            amazon/aws-cli sts get-caller-identity --output json
+                        aws sts get-caller-identity
 
                         echo "SUCCESS: Jenkins connected to AWS."
                     '''
                 }
             }
         }
+
+      
         // =====================================
-        // 10. SETUP TERRAFORM
+        // 10. TERRAFORM INIT, VALIDATE AND PLAN
         // =====================================
-        stage('SETUP TERRAFORM') {
+        stage('TERRAFORM PLAN') {
             steps {
-                sh '''
-                    set -e
+                withCredentials([
+                    string(
+                        credentialsId: 'aws_access_key_id',
+                        variable: 'AWS_ACCESS_KEY_ID'
+                    ),
+                    string(
+                        credentialsId: 'aws_secret_access_key',
+                        variable: 'AWS_SECRET_ACCESS_KEY'
+                    ),
+                    string(
+                        credentialsId: 'aws_session_token',
+                        variable: 'AWS_SESSION_TOKEN'
+                    )
+                ]) {
+                    sh '''
+                        set -eu
+                        set +x
 
-                    echo "===== DEPLOY NEW CONTAINER ====="
+                        export AWS_DEFAULT_REGION=us-east-1
 
-                    docker run -d \
-                        --name ${CONTAINER_NAME} \
-                        --restart unless-stopped \
-                        -p ${APP_PORT}:${CONTAINER_PORT} \
-                        -e SPRING_DATASOURCE_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?createDatabaseIfNotExist=true" \
-                        -e SPRING_DATASOURCE_USERNAME=root \
-                        -e SPRING_DATASOURCE_PASSWORD= \
-                        ${IMAGE_NAME}:${IMAGE_TAG}
+                        echo "===== TERRAFORM VERSION ====="
+                        terraform -version
 
-                    echo "===== WAIT FOR APPLICATION ====="
+                        echo "===== TERRAFORM INIT ====="
+                        cd terraform
+                        terraform init -input=false
 
-                    STARTED=false
+                        echo "===== TERRAFORM VALIDATE ====="
+                        terraform validate
 
-                    for i in $(seq 1 30); do
+                        echo "===== TERRAFORM PLAN ====="
+                        terraform plan -input=false -out=tfplan
 
-                        if docker logs ${CONTAINER_NAME} 2>&1 | grep -q "Started"; then
-                            STARTED=true
-                            break
-                        fi
-
-                        sleep 5
-                    done
-
-                    if [ "$STARTED" != "true" ]; then
-                        echo "ERROR: Application failed to start."
-                        docker logs ${CONTAINER_NAME}
-                        exit 1
-                    fi
-
-                    echo "SUCCESS: Application started."
-                '''
+                        echo "SUCCESS: Terraform plan generated."
+                    '''
+                }
             }
         }
+
 
         // =====================================
         // 11. UPDATE KUBECONFIG

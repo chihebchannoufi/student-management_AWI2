@@ -31,3 +31,16 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Terraform local files
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/tfplan
+terraform/tfplan.*
+terraform/*.tfvars
+terraform/*.tfvars.json
+
+# Jenkins backup files
+jenkins_home_backup.tar.gz
+docker-compose.yml.bak
