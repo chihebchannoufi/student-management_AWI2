@@ -4,7 +4,11 @@ def withAws(Closure body) {
         string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
         string(credentialsId: 'aws-session-token',     variable: 'AWS_SESSION_TOKEN')
     ]) {
-        withEnv(['AWS_DEFAULT_REGION=us-west-2']) {
+        withEnv([
+            'AWS_DEFAULT_REGION=us-west-2',
+            'PATH+TOOLS=C:\\Tools',
+            'PATH+AWSCLI=C:\\Program Files\\Amazon\\AWSCLIV2'
+        ]) {
             body()
         }
     }
