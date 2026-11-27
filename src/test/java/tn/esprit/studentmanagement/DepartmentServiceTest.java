@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @TestMethodOrder(OrderAnnotation.class)
 @Slf4j
-public class DepartmentServiceTest {
+ class DepartmentServiceTest {
 
     @Autowired
     IDepartmentService departmentService;
@@ -30,7 +30,7 @@ public class DepartmentServiceTest {
     // 1. Test de saveDepartment()
     @Test
     @Order(1)
-    public void testSaveDepartment() {
+     void testSaveDepartment() {
         Department d = new Department();
         d.setName("Informatique");
         d.setLocation("Bloc A");
@@ -64,7 +64,7 @@ public class DepartmentServiceTest {
     // 3. Test de getAllDepartments()
     @Test
     @Order(3)
-    public void testGetAllDepartments() {
+     void testGetAllDepartments() {
         List<Department> departments = departmentService.getAllDepartments();
         log.info("Nombre total de départements en BD : " + departments.size());
 
@@ -75,7 +75,7 @@ public class DepartmentServiceTest {
     // 4. Test de deleteDepartment()
     @Test
     @Order(4)
-    public void testDeleteDepartment() {
+     void testDeleteDepartment() {
         assertNotNull(savedDeptId, "L'ID ne doit pas être null avant la suppression");
 
         // Suppression dans la base MySQL

@@ -22,7 +22,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @Slf4j
-public class DepartmentServiceMockTest {
+ class DepartmentServiceMockTest {
 
     @Mock
     DepartmentRepository departmentRepository; // Faux Repository
@@ -45,7 +45,7 @@ public class DepartmentServiceMockTest {
 
     // 1. Test de saveDepartment()
     @Test
-    public void testSaveDepartmentWithMock() {
+     void testSaveDepartmentWithMock() {
         when(departmentRepository.save(Mockito.any(Department.class))).thenReturn(department);
 
         Department savedDept = departmentService.saveDepartment(department);
@@ -59,7 +59,7 @@ public class DepartmentServiceMockTest {
 
     // 2. Test de getDepartmentById()
     @Test
-    public void testGetDepartmentByIdWithMock() {
+     void testGetDepartmentByIdWithMock() {
         // findById retourne un Optional<Department> car le service appelle .get()
         when(departmentRepository.findById(1L)).thenReturn(Optional.of(department));
 
@@ -74,7 +74,7 @@ public class DepartmentServiceMockTest {
 
     // 3. Test de getAllDepartments()
     @Test
-    public void testGetAllDepartmentsWithMock() {
+     void testGetAllDepartmentsWithMock() {
         Department d2 = new Department();
         d2.setIdDepartment(2L);
         d2.setName("Génie Civil");
@@ -96,7 +96,7 @@ public class DepartmentServiceMockTest {
 
     // 4. Test de deleteDepartment()
     @Test
-    public void testDeleteDepartmentWithMock() {
+     void testDeleteDepartmentWithMock() {
         doNothing().when(departmentRepository).deleteById(1L);
 
         departmentService.deleteDepartment(1L);
