@@ -290,12 +290,12 @@ EOF
         success {
             mail to: 'chnada780@gmail.com',
                  subject: "SUCCESS: Pipeline ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                 body: "El build #${env.BUILD_NUMBER} nja7 w t-deploya 3la AWS EKS.\nChouf les logs (w el URL mta3 Swagger): ${env.BUILD_URL}console"
+                 body: "le build #${env.BUILD_NUMBER} et success.: ${env.BUILD_URL}console"
         }
         failure {
             mail to: 'chnada780@gmail.com',
                  subject: "FAILURE: Pipeline ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                 body: "El build #${env.BUILD_NUMBER} ta7.\nChouf el erreur: ${env.BUILD_URL}console"
+                 body: "le build #${env.BUILD_NUMBER} failed.l'erreur est : ${env.BUILD_URL}console"
         }
     }
 }
