@@ -4,7 +4,7 @@ def withAws(Closure body) {
         string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
         string(credentialsId: 'aws-session-token',     variable: 'AWS_SESSION_TOKEN')
     ]) {
-        withEnv(['AWS_DEFAULT_REGION=us-east-1']) {
+        withEnv(['AWS_DEFAULT_REGION=us-west-2']) {
             body()
         }
     }
@@ -19,7 +19,7 @@ pipeline {
     }
 
     parameters {
-        booleanParam(name: 'RUN_AWS', defaultValue: false, description: 'Run the AWS / Terraform / Kubernetes stages')
+        booleanParam(name: 'RUN_AWS', defaultValue: true, description: 'Run the AWS / Terraform / Kubernetes stages')
     }
 
     environment {
@@ -93,8 +93,8 @@ pipeline {
             steps {
                 withAws {
                     dir('terraform') {
-                        bat 'terraform init'
-                        bat 'terraform apply -auto-approve'
+                        bat 'terraform init -input=false'
+                        bat 'terraform apply -auto-approve -input=false'
                     }
                 }
             }
@@ -103,7 +103,7 @@ pipeline {
         stage('UPDATE KUBECONFIG') {
             when { expression { params.RUN_AWS } }
             steps {
-                withAws { bat 'aws eks update-kubeconfig --region us-east-1 --name YOUR_CLUSTER_NAME' }
+                withAws { bat 'aws eks update-kubeconfig --region us-west-2 --name student-cluster' }
             }
         }
 
@@ -113,14 +113,39 @@ pipeline {
                 withAws {
                     bat 'kubectl apply -f k8s/'
                     bat 'kubectl rollout restart deployment/student-management'
-                    bat 'kubectl rollout status deployment/student-management --timeout=180s'
+                    bat 'kubectl rollout status deployment/student-management --timeout=300s'
                 }
             }
         }
     }
 
     post {
-        success { echo 'Pipeline finished successfully.' }
-        failure { echo 'Pipeline failed, check the console output.' }
+        success {
+            script {
+                try {
+                    emailext(
+                        to: 'ybenkadria@gmail.com',
+                        subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                        body: "The pipeline ${env.JOB_NAME} build #${env.BUILD_NUMBER} finished successfully.\n\nDetails: ${env.BUILD_URL}"
+                    )
+                } catch (e) {
+                    echo "Email could not be sent: ${e.message}"
+                }
+            }
+        }
+        failure {
+            script {
+                try {
+                    emailext(
+                        to: 'ybenkadria@gmail.com',
+                        subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                        body: "The pipeline ${env.JOB_NAME} build #${env.BUILD_NUMBER} FAILED.\n\nConsole: ${env.BUILD_URL}console\n\nThe full log is attached.",
+                        attachLog: true
+                    )
+                } catch (e) {
+                    echo "Email could not be sent: ${e.message}"
+                }
+            }
+        }
     }
 }
