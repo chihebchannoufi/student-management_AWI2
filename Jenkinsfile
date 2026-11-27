@@ -14,6 +14,11 @@ pipeline {
         skipDefaultCheckout(true)
     }
 
+    // Declenche le pipeline immediatement a chaque push GitHub (webhook)
+    triggers {
+        githubPush()
+    }
+
     environment {
         terraformDir = 'terraform'
         clusterName  = 'student-eks'
@@ -176,7 +181,7 @@ pipeline {
             }
         }
 
-        // DEPLOIE MySQL et l'application sur Kubernetes
+        // DEPLOIE MySQL et l'application sur Kubernetes (echoue si le deploiement n'aboutit pas)
         stage('DEPLOY TO AWS KUBERNETES') {
             steps {
                 withCredentials(awsCreds + [
@@ -201,13 +206,16 @@ pipeline {
                         kubectl create secret generic mysql-root-secret --from-literal=mysql-root-password="%MYSQL_ROOT_PASSWORD%" --dry-run=client -o yaml | kubectl apply -f -
 
                         kubectl apply -f k8s/
+                        if errorlevel 1 exit /b 1
 
                         kubectl rollout status deployment/student-management --timeout=300s
+                        if errorlevel 1 (
+                            kubectl get pods,svc
+                            kubectl get nodes
+                            exit /b 1
+                        )
 
                         kubectl get pods,svc
-
-                        copy k8s\\app.yaml.template k8s\\app.yaml
-                        del k8s\\app.yaml.template
                         '''
                     }
                 }
@@ -280,7 +288,3 @@ pipeline {
         }
     }
 }
- // Declenche le pipeline immediatement a chaque push GitHub (webhook)
-    triggers {
-        githubPush()
-    }
