@@ -50,7 +50,7 @@ pipeline {
         stage('MVN SONARQUBE') {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    bat 'mvn sonar:sonar -Dsonar.projectKey=student-management -Dsonar.projectName=student-management -Dsonar.host.url=%SONAR_URL% -Dsonar.token=%SONAR_TOKEN%'
+                    bat 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:5.0.0.4389:sonar -Dsonar.projectKey=student-management -Dsonar.projectName=student-management -Dsonar.host.url=%SONAR_URL% -Dsonar.token=%SONAR_TOKEN%'
                 }
             }
         }
