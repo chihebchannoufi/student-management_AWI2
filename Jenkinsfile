@@ -280,3 +280,7 @@ pipeline {
         }
     }
 }
+ // Declenche le pipeline immediatement a chaque push GitHub (webhook)
+    triggers {
+        githubPush()
+    }
